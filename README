@@ -1,0 +1,6 @@
+Requirements for running this project
+1. terraform latest
+2. ansible latest
+3. google cloud account
+4. TestKeyPair placed in ~/.ssh folder
+

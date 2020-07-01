@@ -1,0 +1,93 @@
+---
+- name: Install webserver
+  hosts: test_website
+  become: true
+
+  vars:
+    __nginx_user: "www-data"
+    passenger_server_name: www.example.com
+    passenger_app_root: /opt/
+    passenger_app_env: production
+    
+    passenger_root: /usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini
+    passenger_ruby: /usr/bin/ruby
+    
+    nginx_worker_processes: "{{ ansible_processor_vcpus | default(ansible_processor_count) }}"
+    nginx_worker_connections: "768"
+    nginx_keepalive_timeout: "65"
+    nginx_remove_default_vhost: true
+
+  tasks:
+    - name: update server
+      apt: update_cache=yes
+
+    - name: Define nginx_user.
+      set_fact:
+        nginx_user: "{{ __nginx_user }}"
+      when: nginx_user is not defined
+    
+    # Passenger repository setup.
+    - name: Add Passenger apt key.
+      apt_key:
+        keyserver: keyserver.ubuntu.com
+        id: 561F9B9CAC40B2F7
+        state: present
+    
+    - name: Add apt HTTPS capabilities.
+      apt: name=apt-transport-https state=present
+    
+    - name: Add Phusion apt repo.
+      apt_repository:
+        repo: 'deb https://oss-binaries.phusionpassenger.com/apt/passenger {{ ansible_distribution_release }} main'
+        state: present
+        update_cache: true
+    
+    - name: Install Nginx and Passenger .
+      apt:
+        name:
+          - nginx-extras
+          - passenger
+        state: present
+      when: |
+        ansible_distribution != 'Ubuntu'
+        or ansible_distribution_version != '18.04'
+    
+    # Nginx and passenger configuration.
+    - name: Copy Nginx configuration into place.
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+      notify: restart nginx
+    
+    - name: Configure passenger virtual host.
+      template:
+        src: passenger.j2
+        dest: /etc/nginx/sites-available/passenger
+      notify: restart nginx
+
+    - name: Configure passenger index file.
+      template:
+        src: index.html.j2
+        dest: /opt/index.html
+      notify: restart nginx
+    
+    - name: Ensure passenger virtual host is enabled.
+      file:
+        src: /etc/nginx/sites-available/passenger
+        dest: /etc/nginx/sites-enabled/passenger
+        state: link
+    
+    - name: Ensure default virtual host is removed.
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      when: nginx_remove_default_vhost
+      notify: restart nginx
+
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted
+    
+    
